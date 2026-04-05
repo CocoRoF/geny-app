@@ -31,6 +31,8 @@ data class SessionInfoDto(
     @SerializedName("chat_room_id") val chatRoomId: String? = null,
     @SerializedName("workflow_id") val workflowId: String? = null,
     @SerializedName("graph_name") val graphName: String? = null,
+    @SerializedName("linked_session_id") val linkedSessionId: String? = null,
+    @SerializedName("session_type") val sessionType: String? = null,
     @SerializedName("is_deleted") val isDeleted: Boolean? = false
 )
 

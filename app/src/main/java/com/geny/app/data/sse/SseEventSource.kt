@@ -1,5 +1,6 @@
 package com.geny.app.data.sse
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -13,13 +14,24 @@ import okhttp3.Request
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "SseEventSource"
 
 @Singleton
 class SseEventSource @Inject constructor(
     private val okHttpClient: OkHttpClient
 ) {
+    // Dedicated client with long read timeout for SSE
+    private val sseClient: OkHttpClient by lazy {
+        okHttpClient.newBuilder()
+            .readTimeout(5, TimeUnit.MINUTES)  // SSE needs long timeout
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
     fun streamSse(
         url: String,
         token: String? = null,
@@ -33,16 +45,20 @@ class SseEventSource @Inject constructor(
         token?.let { requestBuilder.header("Authorization", "Bearer $it") }
         lastEventId?.let { requestBuilder.header("Last-Event-ID", it) }
 
-        val call = okHttpClient.newCall(requestBuilder.build())
+        val call = sseClient.newCall(requestBuilder.build())
 
         launch(Dispatchers.IO) {
             try {
+                Log.d(TAG, "Connecting SSE: $url")
                 val response = call.execute()
 
                 if (!response.isSuccessful) {
-                    throw IOException("SSE connection failed: ${response.code}")
+                    val code = response.code
+                    response.close()
+                    throw IOException("SSE connection failed: $code")
                 }
 
+                Log.d(TAG, "SSE connected: $url")
                 val body = response.body ?: throw IOException("Empty SSE response body")
                 val reader = BufferedReader(InputStreamReader(body.byteStream()))
 
@@ -72,10 +88,14 @@ class SseEventSource @Inject constructor(
                     }
                 }
 
+                Log.d(TAG, "SSE stream ended: $url")
                 reader.close()
                 response.close()
+                // Stream ended normally — throw to trigger retry
+                throw IOException("SSE stream closed by server")
             } catch (e: Exception) {
                 if (isActive) {
+                    Log.w(TAG, "SSE error ($url): ${e.message}")
                     close(e)
                 }
             }
@@ -85,17 +105,19 @@ class SseEventSource @Inject constructor(
             call.cancel()
         }
     }.retryWhen { cause, attempt ->
-        if (cause is IOException && attempt < MAX_RETRIES) {
-            val delayMs = minOf(1000L * (1L shl attempt.toInt()), MAX_RETRY_DELAY_MS)
+        // Retry indefinitely for IO errors (SSE connections can drop)
+        if (cause is IOException) {
+            val delayMs = minOf(1000L * (1L shl minOf(attempt.toInt(), 5)), MAX_RETRY_DELAY_MS)
+            Log.d(TAG, "SSE retry #$attempt in ${delayMs}ms: ${cause.message}")
             delay(delayMs)
             true
         } else {
+            Log.e(TAG, "SSE non-retryable error: ${cause.message}")
             false
         }
     }
 
     companion object {
-        private const val MAX_RETRIES = 5L
         private const val MAX_RETRY_DELAY_MS = 30_000L
     }
 }

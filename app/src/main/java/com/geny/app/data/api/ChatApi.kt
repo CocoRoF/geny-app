@@ -5,6 +5,8 @@ import com.geny.app.data.dto.BroadcastResponse
 import com.geny.app.data.dto.ChatRoomDto
 import com.geny.app.data.dto.CreateRoomRequest
 import com.geny.app.data.dto.ChatMessageDto
+import com.geny.app.data.dto.MessageListResponse
+import com.geny.app.data.dto.RoomListResponse
 import com.geny.app.data.dto.UpdateRoomRequest
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -15,7 +17,7 @@ import retrofit2.http.Path
 
 interface ChatApi {
     @GET("api/chat/rooms")
-    suspend fun listRooms(): List<ChatRoomDto>
+    suspend fun listRooms(): RoomListResponse
 
     @POST("api/chat/rooms")
     suspend fun createRoom(@Body request: CreateRoomRequest): ChatRoomDto
@@ -33,7 +35,7 @@ interface ChatApi {
     suspend fun deleteRoom(@Path("id") id: String)
 
     @GET("api/chat/rooms/{id}/messages")
-    suspend fun getMessages(@Path("id") id: String): List<ChatMessageDto>
+    suspend fun getMessages(@Path("id") id: String): MessageListResponse
 
     @POST("api/chat/rooms/{id}/broadcast")
     suspend fun broadcast(

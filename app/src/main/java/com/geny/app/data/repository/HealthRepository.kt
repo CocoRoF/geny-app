@@ -12,4 +12,9 @@ class HealthRepository @Inject constructor(
         healthApi.checkHealth()
         true
     }
+
+    suspend fun getVersion(): Result<String> = runCatching {
+        val response = healthApi.checkHealth()
+        response["version"]?.toString() ?: "unknown"
+    }
 }

@@ -4,7 +4,9 @@ import com.geny.app.data.dto.AvatarStateDto
 import com.geny.app.data.dto.EmotionOverrideRequest
 import com.geny.app.data.dto.InteractRequest
 import com.geny.app.data.dto.ModelAssignRequest
+import com.geny.app.data.dto.AgentModelResponse
 import com.geny.app.data.dto.ModelAssignmentsResponse
+import com.geny.app.data.dto.ModelsResponse
 import com.geny.app.data.dto.VTuberModelDto
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -15,7 +17,7 @@ import retrofit2.http.Path
 
 interface VTuberApi {
     @GET("api/vtuber/models")
-    suspend fun listModels(): List<VTuberModelDto>
+    suspend fun listModels(): ModelsResponse
 
     @GET("api/vtuber/models/{name}")
     suspend fun getModel(@Path("name") name: String): VTuberModelDto
@@ -27,7 +29,7 @@ interface VTuberApi {
     )
 
     @GET("api/vtuber/agents/{id}/model")
-    suspend fun getAssignedModel(@Path("id") id: String): VTuberModelDto
+    suspend fun getAssignedModel(@Path("id") id: String): AgentModelResponse
 
     @DELETE("api/vtuber/agents/{id}/model")
     suspend fun unassignModel(@Path("id") id: String)

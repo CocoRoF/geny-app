@@ -50,5 +50,6 @@ data class MessageListResponse(
 )
 
 data class RoomListResponse(
-    val rooms: List<ChatRoomDto>
+    val rooms: List<ChatRoomDto>,
+    val total: Int? = null
 )

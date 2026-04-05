@@ -38,8 +38,17 @@ data class Agent(
     val chatRoomId: String?,
     val workflowId: String?,
     val graphName: String?,
+    val linkedSessionId: String?,
+    val sessionType: String?,
     val isDeleted: Boolean
-)
+) {
+    /** CLI session bound to a VTuber — should be hidden from main list */
+    val isLinkedCli: Boolean
+        get() = sessionType == "cli" && linkedSessionId != null
+
+    val isVTuber: Boolean
+        get() = role == AgentRole.VTUBER || sessionType == "vtuber"
+}
 
 data class ExecutionResult(
     val success: Boolean,

@@ -1,5 +1,6 @@
 package com.geny.app.data.repository
 
+import android.util.Log
 import com.geny.app.core.storage.SettingsDataStore
 import com.geny.app.core.storage.TokenManager
 import com.geny.app.data.api.ChatApi
@@ -28,7 +29,7 @@ class ChatRepository @Inject constructor(
     private val gson = Gson()
 
     suspend fun listRooms(): Result<List<ChatRoom>> = runCatching {
-        chatApi.listRooms().map { dto ->
+        chatApi.listRooms().rooms.map { dto ->
             ChatRoom(
                 id = dto.id,
                 name = dto.name,
@@ -57,7 +58,7 @@ class ChatRepository @Inject constructor(
     }
 
     suspend fun getMessages(roomId: String): Result<List<ChatMessage>> = runCatching {
-        chatApi.getMessages(roomId).map { it.toDomain() }
+        chatApi.getMessages(roomId).messages.map { it.toDomain() }
     }
 
     suspend fun broadcast(roomId: String, message: String): Result<String> = runCatching {
@@ -73,33 +74,56 @@ class ChatRepository @Inject constructor(
 
     private fun parseChatEvent(eventType: String, data: String): ChatSseEvent? {
         return try {
-            val json = gson.fromJson(data, JsonObject::class.java)
             when (eventType) {
                 "message" -> {
                     val msg = gson.fromJson(data, ChatMessageDto::class.java)
+                    Log.d(TAG, "SSE parsed message: type=${msg.type}, id=${msg.id}, content=${msg.content.take(40)}")
                     ChatSseEvent.NewMessage(msg.toDomain())
                 }
-                "broadcast_status" -> ChatSseEvent.BroadcastStatus(
-                    broadcastId = json.get("broadcast_id")?.asString ?: "",
-                    completed = json.get("completed")?.asInt ?: 0,
-                    total = json.get("total")?.asInt ?: 0,
-                    agentStates = emptyMap()
-                )
-                "agent_progress" -> ChatSseEvent.AgentProgress(
-                    sessionId = json.get("session_id")?.asString ?: "",
-                    sessionName = json.get("session_name")?.asString,
-                    status = json.get("status")?.asString ?: "",
-                    thinkingPreview = json.get("thinking_preview")?.asString
-                )
-                "broadcast_done" -> ChatSseEvent.BroadcastDone(
-                    broadcastId = json.get("broadcast_id")?.asString ?: ""
-                )
+                "broadcast_status" -> {
+                    val json = gson.fromJson(data, JsonObject::class.java)
+                    ChatSseEvent.BroadcastStatus(
+                        broadcastId = json.get("broadcast_id")?.asString ?: "",
+                        completed = json.get("completed")?.asInt ?: 0,
+                        total = json.get("total")?.asInt ?: 0,
+                        agentStates = emptyMap()
+                    )
+                }
+                "agent_progress" -> {
+                    val json = gson.fromJson(data, JsonObject::class.java)
+                    // Backend may send as array or object — handle both
+                    val agentState = if (json.isJsonArray) {
+                        json.asJsonArray.firstOrNull()?.asJsonObject
+                    } else {
+                        json
+                    }
+                    ChatSseEvent.AgentProgress(
+                        sessionId = agentState?.get("session_id")?.asString ?: "",
+                        sessionName = agentState?.get("session_name")?.asString,
+                        status = agentState?.get("status")?.asString ?: "",
+                        thinkingPreview = agentState?.get("thinking_preview")?.asString
+                    )
+                }
+                "broadcast_done" -> {
+                    val json = gson.fromJson(data, JsonObject::class.java)
+                    ChatSseEvent.BroadcastDone(
+                        broadcastId = json.get("broadcast_id")?.asString ?: ""
+                    )
+                }
                 "heartbeat" -> ChatSseEvent.Heartbeat
-                else -> null
+                else -> {
+                    Log.d(TAG, "SSE unknown event type: $eventType, data: ${data.take(100)}")
+                    null
+                }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "SSE parse error for event '$eventType': ${e.message}, data: ${data.take(200)}")
             null
         }
+    }
+
+    companion object {
+        private const val TAG = "ChatRepository"
     }
 
     private fun ChatMessageDto.toDomain(): ChatMessage = ChatMessage(

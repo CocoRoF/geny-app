@@ -19,7 +19,8 @@ data class AuthStatusResponse(
 )
 
 data class AuthTokenResponse(
-    val token: String,
+    @SerializedName("access_token") val token: String,
+    @SerializedName("token_type") val tokenType: String? = null,
     val username: String? = null,
     @SerializedName("display_name") val displayName: String? = null
 )

@@ -19,7 +19,9 @@ data class SettingsUiState(
     val isTesting: Boolean = false,
     val testResult: String? = null,
     val username: String? = null,
-    val autoLoginEnabled: Boolean = false
+    val autoLoginEnabled: Boolean = false,
+    val ttsEnabled: Boolean = false,
+    val backendVersion: String? = null
 )
 
 @HiltViewModel
@@ -40,9 +42,26 @@ class SettingsViewModel @Inject constructor(
                     serverUrl = settings.serverUrl,
                     themeMode = settings.themeMode,
                     autoLoginEnabled = tokenManager.isAutoLoginEnabled(),
-                    username = tokenManager.getSavedCredentials()?.username
+                    username = tokenManager.getSavedCredentials()?.username,
+                    ttsEnabled = settingsDataStore.ttsEnabled
                 )
             }
+        }
+        loadBackendVersion()
+    }
+
+    private fun loadBackendVersion() {
+        viewModelScope.launch {
+            healthRepository.getVersion().onSuccess { version ->
+                _uiState.value = _uiState.value.copy(backendVersion = version)
+            }
+        }
+    }
+
+    fun setTtsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsDataStore.setTtsEnabled(enabled)
+            _uiState.value = _uiState.value.copy(ttsEnabled = enabled)
         }
     }
 

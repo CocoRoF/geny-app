@@ -39,7 +39,12 @@ data class AgentDetailUiState(
     val selectedFileContent: String? = null,
     val selectedFilePath: String? = null,
     // Tab
-    val selectedTab: Int = 0
+    val selectedTab: Int = 0,
+    // System Prompt Editing
+    val isEditingPrompt: Boolean = false,
+    val editingPromptText: String = "",
+    val isSavingPrompt: Boolean = false,
+    val promptSaveError: String? = null
 )
 
 @HiltViewModel
@@ -64,9 +69,13 @@ class AgentDetailViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             agentRepository.getAgent(agentId)
                 .onSuccess { agent ->
+                    val isVTuber = agent.isVTuber
                     _uiState.value = _uiState.value.copy(
                         agent = agent,
-                        isLoading = false
+                        isLoading = false,
+                        // VTuber agents: tab 0 is VTuber (nav-only), default to tab 1 (Execute)
+                        selectedTab = if (isVTuber && _uiState.value.selectedTab == 0) 1
+                                      else _uiState.value.selectedTab
                     )
                 }
                 .onFailure { e ->
@@ -216,6 +225,43 @@ class AgentDetailViewModel @Inject constructor(
 
     fun closeFile() {
         _uiState.value = _uiState.value.copy(selectedFilePath = null, selectedFileContent = null)
+    }
+
+    fun startEditingPrompt() {
+        _uiState.value = _uiState.value.copy(
+            isEditingPrompt = true,
+            editingPromptText = _uiState.value.agent?.systemPrompt ?: "",
+            promptSaveError = null
+        )
+    }
+
+    fun onEditingPromptChanged(text: String) {
+        _uiState.value = _uiState.value.copy(editingPromptText = text)
+    }
+
+    fun cancelEditingPrompt() {
+        _uiState.value = _uiState.value.copy(isEditingPrompt = false, promptSaveError = null)
+    }
+
+    fun saveSystemPrompt() {
+        val text = _uiState.value.editingPromptText
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSavingPrompt = true, promptSaveError = null)
+            agentRepository.updateSystemPrompt(agentId, text)
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        isSavingPrompt = false,
+                        isEditingPrompt = false,
+                        agent = _uiState.value.agent?.copy(systemPrompt = text)
+                    )
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        isSavingPrompt = false,
+                        promptSaveError = e.message ?: "Failed to save"
+                    )
+                }
+        }
     }
 
     override fun onCleared() {

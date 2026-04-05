@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,7 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import com.geny.app.core.ui.components.EmptyState
 import com.geny.app.core.ui.components.ErrorState
 import com.geny.app.core.ui.components.LoadingOverlay
@@ -53,11 +60,25 @@ import com.geny.app.domain.model.Agent
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
-    onAgentClick: (String) -> Unit
+    onAgentClick: (String) -> Unit,
+    onVTuberClick: ((String) -> Unit)? = null,
+    onBack: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("All Agents") },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        }
+                    }
+                }
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = viewModel::showCreateDialog,
@@ -102,9 +123,23 @@ fun DashboardScreen(
                                 items = uiState.agents,
                                 key = { it.sessionId }
                             ) { agent ->
+                                val cliSession = if (agent.isVTuber) {
+                                    uiState.allAgents.find {
+                                        it.linkedSessionId == agent.sessionId &&
+                                                it.sessionType == "cli"
+                                    }
+                                } else null
+
                                 AgentCard(
                                     agent = agent,
-                                    onClick = { onAgentClick(agent.sessionId) }
+                                    cliSession = cliSession,
+                                    onClick = {
+                                        if (agent.isVTuber && onVTuberClick != null) {
+                                            onVTuberClick(agent.sessionId)
+                                        } else {
+                                            onAgentClick(agent.sessionId)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -132,6 +167,7 @@ fun DashboardScreen(
 @Composable
 private fun AgentCard(
     agent: Agent,
+    cliSession: Agent? = null,
     onClick: () -> Unit
 ) {
     Card(
@@ -155,7 +191,15 @@ private fun AgentCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                StatusBadge(status = agent.status)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (cliSession != null) {
+                        CliBadge(isRunning = cliSession.status.name == "RUNNING")
+                    }
+                    StatusBadge(status = agent.status)
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -197,6 +241,36 @@ private fun AgentCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CliBadge(isRunning: Boolean) {
+    val bgColor = if (isRunning) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val textColor = if (isRunning) {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val indicator = if (isRunning) "\u25CF" else "\u25CB"
+
+    Row(
+        modifier = Modifier
+            .clip(MaterialTheme.shapes.small)
+            .background(bgColor)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "CLI $indicator",
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor
+        )
     }
 }
 

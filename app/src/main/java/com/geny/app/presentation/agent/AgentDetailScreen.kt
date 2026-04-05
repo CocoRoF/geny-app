@@ -25,10 +25,16 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,10 +67,13 @@ import com.geny.app.core.ui.theme.StatusRunning
 fun AgentDetailScreen(
     viewModel: AgentDetailViewModel,
     onBack: () -> Unit,
-    onVTuberClick: ((String) -> Unit)? = null
+    onVTuberClick: ((String) -> Unit)? = null,
+    onMemoryClick: ((String) -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val tabs = listOf("Execute", "Storage", "Info")
+    val isVTuber = uiState.agent?.isVTuber == true
+    val tabs = if (isVTuber) listOf("VTuber", "Execute", "Storage", "Memory", "Info")
+               else listOf("Execute", "Storage", "Memory", "Info")
 
     Scaffold(
         topBar = {
@@ -106,13 +115,28 @@ fun AgentDetailScreen(
                         tabs.forEachIndexed { index, title ->
                             Tab(
                                 selected = uiState.selectedTab == index,
-                                onClick = { viewModel.selectTab(index) },
+                                onClick = {
+                                    if (isVTuber && index == 0) {
+                                        // VTuber tab → navigate to fullscreen viewer
+                                        uiState.agent?.sessionId?.let { id ->
+                                            onVTuberClick?.invoke(id)
+                                        }
+                                    } else if (title == "Memory") {
+                                        // Memory tab → navigate to memory browser
+                                        uiState.agent?.sessionId?.let { id ->
+                                            onMemoryClick?.invoke(id)
+                                        }
+                                    } else {
+                                        viewModel.selectTab(index)
+                                    }
+                                },
                                 text = { Text(title) }
                             )
                         }
                     }
 
-                    when (uiState.selectedTab) {
+                    val contentTab = if (isVTuber) uiState.selectedTab - 1 else uiState.selectedTab
+                    when (contentTab) {
                         0 -> ExecutionPanel(
                             prompt = uiState.prompt,
                             isExecuting = uiState.isExecuting,
@@ -132,7 +156,19 @@ fun AgentDetailScreen(
                             onClose = viewModel::closeFile,
                             onRefresh = viewModel::loadStorage
                         )
-                        2 -> AgentInfoPanel(agent = uiState.agent)
+                        // 2 = Memory tab — handled by navigation, show placeholder
+                        2 -> {}
+                        3 -> AgentInfoPanel(
+                            agent = uiState.agent,
+                            isEditingPrompt = uiState.isEditingPrompt,
+                            editingPromptText = uiState.editingPromptText,
+                            isSavingPrompt = uiState.isSavingPrompt,
+                            promptSaveError = uiState.promptSaveError,
+                            onStartEditing = viewModel::startEditingPrompt,
+                            onEditingTextChanged = viewModel::onEditingPromptChanged,
+                            onSave = viewModel::saveSystemPrompt,
+                            onCancel = viewModel::cancelEditingPrompt
+                        )
                     }
                 }
             }
@@ -418,7 +454,17 @@ private fun formatFileSize(bytes: Long): String {
 }
 
 @Composable
-fun AgentInfoPanel(agent: com.geny.app.domain.model.Agent?) {
+fun AgentInfoPanel(
+    agent: com.geny.app.domain.model.Agent?,
+    isEditingPrompt: Boolean = false,
+    editingPromptText: String = "",
+    isSavingPrompt: Boolean = false,
+    promptSaveError: String? = null,
+    onStartEditing: () -> Unit = {},
+    onEditingTextChanged: (String) -> Unit = {},
+    onSave: () -> Unit = {},
+    onCancel: () -> Unit = {}
+) {
     if (agent == null) return
 
     LazyColumn(
@@ -439,22 +485,93 @@ fun AgentInfoPanel(agent: com.geny.app.domain.model.Agent?) {
         agent.workflowId?.let { item { InfoRow("Workflow", it) } }
         agent.graphName?.let { item { InfoRow("Graph", it) } }
         agent.storagePath?.let { item { InfoRow("Storage Path", it) } }
-        agent.systemPrompt?.let { prompt ->
-            item {
-                Column {
+
+        // System Prompt with inline editing
+        item {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
                         text = "System Prompt",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    if (!isEditingPrompt) {
+                        IconButton(
+                            onClick = onStartEditing,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Edit, "Edit",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                if (isEditingPrompt) {
+                    OutlinedTextField(
+                        value = editingPromptText,
+                        onValueChange = onEditingTextChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 4,
+                        maxLines = 12,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        enabled = !isSavingPrompt
+                    )
+                    promptSaveError?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                    ) {
+                        OutlinedButton(
+                            onClick = onCancel,
+                            enabled = !isSavingPrompt
+                        ) {
+                            Icon(Icons.Filled.Close, null, Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Cancel")
+                        }
+                        Button(
+                            onClick = onSave,
+                            enabled = !isSavingPrompt
+                        ) {
+                            if (isSavingPrompt) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Filled.Save, null, Modifier.size(16.dp))
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save")
+                        }
+                    }
+                } else {
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant
                         )
                     ) {
                         Text(
-                            text = prompt,
+                            text = agent.systemPrompt ?: "(no system prompt)",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontFamily = FontFamily.Monospace
                             ),

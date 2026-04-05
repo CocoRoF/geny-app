@@ -111,6 +111,14 @@ class AgentRepository @Inject constructor(
         agentApi.readFile(id, path).content
     }
 
+    suspend fun getSystemPrompt(id: String): Result<String> = runCatching {
+        agentApi.getSystemPrompt(id)["system_prompt"] ?: ""
+    }
+
+    suspend fun updateSystemPrompt(id: String, prompt: String): Result<Unit> = runCatching {
+        agentApi.updateSystemPrompt(id, mapOf("system_prompt" to prompt))
+    }
+
     private fun parseExecutionEvent(eventType: String, data: String): ExecutionEvent? {
         return try {
             val json = gson.fromJson(data, JsonObject::class.java)
@@ -167,6 +175,8 @@ class AgentRepository @Inject constructor(
         chatRoomId = chatRoomId,
         workflowId = workflowId,
         graphName = graphName,
+        linkedSessionId = linkedSessionId,
+        sessionType = sessionType,
         isDeleted = isDeleted ?: false
     )
 }

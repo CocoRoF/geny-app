@@ -1,45 +1,48 @@
 package com.geny.app.presentation.vtuber
 
+import android.annotation.SuppressLint
+import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Circle
-import androidx.compose.material.icons.filled.EmojiEmotions
-import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,281 +52,259 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.geny.app.core.ui.components.LoadingOverlay
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VTuberViewerScreen(
     viewModel: VTuberViewerViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenDrawer: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var webView by remember { mutableStateOf<WebView?>(null) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("VTuber Viewer")
-                        if (uiState.isConnected) {
-                            Icon(
-                                Icons.Filled.Circle,
-                                null,
-                                modifier = Modifier
-                                    .padding(start = 8.dp)
-                                    .size(8.dp),
-                                tint = Color(0xFF4CAF50)
-                            )
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                    }
-                }
-            )
+    // Push avatar state to WebView when it changes
+    LaunchedEffect(uiState.avatarState) {
+        val state = uiState.avatarState ?: return@LaunchedEffect
+        val wv = webView ?: return@LaunchedEffect
+        val js = "applyAvatarState(${state.expressionIndex ?: 0}, " +
+                "'${state.motionGroup ?: "Idle"}', ${state.motionIndex ?: 0}, " +
+                "'${state.trigger ?: "system"}')"
+        wv.post { wv.evaluateJavascript(js, null) }
+    }
+
+    // Push thinking state to WebView
+    LaunchedEffect(uiState.isThinking) {
+        val wv = webView ?: return@LaunchedEffect
+        if (uiState.isThinking) {
+            wv.post { wv.evaluateJavascript("applyAvatarState(0, 'Thinking', 0, 'thinking')", null) }
         }
-    ) { paddingValues ->
+    }
+
+    // Init model when WebView is ready and model info is available
+    LaunchedEffect(uiState.webViewReady, uiState.currentModel) {
+        if (!uiState.webViewReady) return@LaunchedEffect
+        val model = uiState.currentModel ?: return@LaunchedEffect
+        val wv = webView ?: return@LaunchedEffect
+        val serverUrl = viewModel.serverUrl
+        val js = "initLive2D('$serverUrl', '${model.url}', ${model.kScale}, '${model.idleMotionGroup}')"
+        wv.post { wv.evaluateJavascript(js, null) }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webView?.destroy()
+            webView = null
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
+    ) {
         if (uiState.isLoading) {
-            LoadingOverlay(modifier = Modifier.padding(paddingValues))
-            return@Scaffold
+            LoadingOverlay()
+            return
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Avatar State Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text(
-                        text = "Avatar State",
-                        style = MaterialTheme.typography.titleMedium
+        // Layer 1: Live2D WebView (full-screen)
+        AndroidView(
+            factory = { context ->
+                val frame = FrameLayout(context).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Emotion display
-                    val emotion = uiState.avatarState?.emotion ?: "neutral"
-                    val emotionEmoji = getEmotionVisual(emotion)
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(getEmotionColor(emotion).copy(alpha = 0.1f))
-                            .border(
-                                2.dp,
-                                getEmotionColor(emotion).copy(alpha = 0.3f),
-                                RoundedCornerShape(16.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = emotionEmoji,
-                                fontSize = 48.sp
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = emotion.uppercase(),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = getEmotionColor(emotion)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // State details
-                    uiState.avatarState?.let { state ->
-                        StateDetailRow("Motion", state.motionGroup ?: "idle")
-                        state.intensity?.let {
-                            StateDetailRow("Intensity", String.format("%.1f", it))
-                        }
-                        state.trigger?.let {
-                            StateDetailRow("Trigger", it)
-                        }
-                    }
                 }
-            }
-
-            // Touch Interaction
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.TouchApp, null, modifier = Modifier.size(20.dp))
-                        Text(
-                            text = " Touch Interaction",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf("HitAreaHead", "HitAreaBody").forEach { area ->
-                            FilterChip(
-                                selected = false,
-                                onClick = { viewModel.interact(area) },
-                                label = { Text(area.removePrefix("HitArea")) }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Emotion Control
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.EmojiEmotions, null, modifier = Modifier.size(20.dp))
-                        Text(
-                            text = " Emotion Override",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    val emotions = listOf(
-                        "neutral", "happy", "sad", "angry", "surprised", "thinking", "excited"
+                @SuppressLint("SetJavaScriptEnabled")
+                val wv = WebView(context).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
                     )
-
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        emotions.forEach { emotion ->
-                            FilterChip(
-                                selected = uiState.selectedEmotion == emotion,
-                                onClick = { viewModel.setEmotion(emotion) },
-                                label = {
-                                    Text("${getEmotionVisual(emotion)} ${emotion.replaceFirstChar { it.uppercase() }}")
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Model Selector
-            if (uiState.models.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Model",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        var expanded by remember { mutableStateOf(false) }
-                        ExposedDropdownMenuBox(
-                            expanded = expanded,
-                            onExpandedChange = { expanded = it }
-                        ) {
-                            OutlinedTextField(
-                                value = uiState.models.firstOrNull()?.name ?: "Select model",
-                                onValueChange = {},
-                                readOnly = true,
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expanded,
-                                onDismissRequest = { expanded = false }
-                            ) {
-                                uiState.models.forEach { model ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Column {
-                                                Text(model.name)
-                                                model.description?.let {
-                                                    Text(
-                                                        text = it,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        onClick = {
-                                            viewModel.assignModel(model.name)
-                                            expanded = false
-                                        }
-                                    )
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.allowFileAccess = true
+                    settings.allowContentAccess = true
+                    @Suppress("DEPRECATION")
+                    settings.allowUniversalAccessFromFileURLs = true
+                    settings.mediaPlaybackRequiresUserGesture = false
+                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    setBackgroundColor(android.graphics.Color.parseColor("#1a1a2e"))
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onConsoleMessage(cm: ConsoleMessage?): Boolean {
+                            cm?.let {
+                                if (it.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                                    viewModel.onWebViewError(it.message())
                                 }
                             }
+                            return true
                         }
                     }
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            viewModel.onWebViewReady()
+                        }
+                    }
+                    addJavascriptInterface(
+                        VTuberJsBridge(viewModel),
+                        "AndroidBridge"
+                    )
+                    WebView.setWebContentsDebuggingEnabled(true)
+                    loadUrl("file:///android_asset/live2d_viewer.html")
+                }
+                webView = wv
+                frame.addView(wv)
+                frame
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Layer 2: Top bar (semi-transparent)
+        TopAppBar(
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(uiState.agentName ?: "VTuber")
+                    if (uiState.isConnected) {
+                        Icon(
+                            Icons.Filled.Circle, null,
+                            modifier = Modifier.padding(start = 8.dp).size(8.dp),
+                            tint = Color(0xFF4CAF50)
+                        )
+                    }
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onOpenDrawer ?: onBack) {
+                    Icon(Icons.Filled.Menu, "Menu")
+                }
+            },
+            actions = {
+                // Chat overlay toggle
+                IconButton(onClick = viewModel::toggleChatOverlay) {
+                    Icon(
+                        if (uiState.chatOverlayVisible) Icons.Filled.ChatBubble
+                        else Icons.Filled.ChatBubbleOutline,
+                        if (uiState.chatOverlayVisible) "Hide Chat" else "Show Chat",
+                        tint = if (uiState.chatOverlayVisible)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+                // TTS toggle
+                IconButton(onClick = viewModel::toggleTts) {
+                    Icon(
+                        if (uiState.ttsEnabled) Icons.AutoMirrored.Filled.VolumeUp
+                        else Icons.AutoMirrored.Filled.VolumeOff,
+                        if (uiState.ttsEnabled) "TTS On" else "TTS Off",
+                        tint = if (uiState.ttsEnabled) Color(0xFF4CAF50)
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+            )
+        )
+
+        // Layer 3: Chat overlay + input (bottom)
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+        ) {
+            // Chat messages overlay (collapsible)
+            AnimatedVisibility(
+                visible = uiState.chatOverlayVisible && uiState.messages.isNotEmpty(),
+                enter = fadeIn() + slideInVertically { it },
+                exit = fadeOut() + slideOutVertically { it }
+            ) {
+                ChatOverlay(
+                    messages = uiState.messages,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Thinking indicator
+            AnimatedVisibility(
+                visible = uiState.isThinking,
+                enter = fadeIn() + slideInVertically { it },
+                exit = fadeOut() + slideOutVertically { it }
+            ) {
+                ThinkingIndicator(
+                    agentName = uiState.agentName,
+                    thinkingPreview = uiState.thinkingPreview,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+
+            // Chat input
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                OutlinedTextField(
+                    value = uiState.chatMessage,
+                    onValueChange = viewModel::onChatMessageChanged,
+                    placeholder = { Text("Send a message...") },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 3,
+                    enabled = !uiState.isSending,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+                    )
+                )
+
+                IconButton(
+                    onClick = viewModel::sendChat,
+                    enabled = uiState.chatMessage.isNotBlank() && !uiState.isSending,
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(
+                                alpha = if (uiState.chatMessage.isNotBlank()) 1f else 0.4f
+                            )
+                        )
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        "Send",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
         }
     }
 }
 
-@Composable
-private fun StateDetailRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
-        )
+/** JavaScript interface for WebView -> Android communication */
+class VTuberJsBridge(private val viewModel: VTuberViewerViewModel) {
+    @JavascriptInterface
+    fun onTap(hitArea: String, x: Float, y: Float) {
+        viewModel.interact(hitArea, x, y)
     }
-}
 
-private fun getEmotionVisual(emotion: String): String = when (emotion.lowercase()) {
-    "happy" -> "\uD83D\uDE0A"
-    "sad" -> "\uD83D\uDE22"
-    "angry" -> "\uD83D\uDE20"
-    "surprised" -> "\uD83D\uDE2E"
-    "thinking" -> "\uD83E\uDD14"
-    "excited" -> "\uD83E\uDD29"
-    "neutral" -> "\uD83D\uDE10"
-    else -> "\uD83D\uDE36"
-}
+    @JavascriptInterface
+    fun onModelLoaded() {
+        viewModel.onModelLoaded()
+    }
 
-private fun getEmotionColor(emotion: String): Color = when (emotion.lowercase()) {
-    "happy" -> Color(0xFFFFCA28)
-    "sad" -> Color(0xFF42A5F5)
-    "angry" -> Color(0xFFEF5350)
-    "surprised" -> Color(0xFFFF7043)
-    "thinking" -> Color(0xFF7E57C2)
-    "excited" -> Color(0xFFEC407A)
-    else -> Color(0xFF78909C)
+    @JavascriptInterface
+    fun onError(message: String) {
+        viewModel.onWebViewError(message)
+    }
 }

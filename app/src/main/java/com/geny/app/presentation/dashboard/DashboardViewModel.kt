@@ -12,7 +12,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class DashboardUiState(
-    val agents: List<Agent> = emptyList(),
+    val agents: List<Agent> = emptyList(),       // visible agents (CLI filtered out)
+    val allAgents: List<Agent> = emptyList(),     // all agents including CLI
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val error: String? = null,
@@ -40,8 +41,10 @@ class DashboardViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             agentRepository.listAgents()
                 .onSuccess { agents ->
+                    val active = agents.filter { !it.isDeleted }
                     _uiState.value = _uiState.value.copy(
-                        agents = agents.filter { !it.isDeleted },
+                        allAgents = active,
+                        agents = active.filter { !it.isLinkedCli },
                         isLoading = false,
                         isRefreshing = false
                     )

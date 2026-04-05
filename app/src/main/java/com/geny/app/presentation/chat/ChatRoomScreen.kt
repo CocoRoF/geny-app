@@ -45,6 +45,7 @@ import com.geny.app.core.ui.theme.ChatAgent
 import com.geny.app.core.ui.theme.ChatSystem
 import com.geny.app.core.ui.theme.ChatUser
 import com.geny.app.domain.model.ChatMessage
+import com.geny.app.core.ui.util.formatTimestamp
 import com.geny.app.domain.model.MessageType
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -183,10 +184,19 @@ private fun MessageBubble(message: ChatMessage) {
                     style = MaterialTheme.typography.bodyMedium
                 )
 
-                message.durationMs?.let { ms ->
+                // Timestamp + duration
+                val timeText = buildString {
+                    val ts = formatTimestamp(message.timestamp)
+                    if (ts.isNotBlank()) append(ts)
+                    message.durationMs?.let { ms ->
+                        if (isNotBlank()) append(" · ")
+                        append("${ms}ms")
+                    }
+                }
+                if (timeText.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${ms}ms",
+                        text = timeText,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )

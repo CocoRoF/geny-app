@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Live2D Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; }
+  #canvas-container { width: 100%; height: 100%; position: relative; }
+  #canvas-container canvas { width: 100% !important; height: 100% !important; display: block; }
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #aaa; font-family: sans-serif; font-size: 14px; text-align: center;
+  }
+  .spinner {
+    width: 32px; height: 32px; margin: 0 auto 8px;
+    border: 3px solid #333; border-top-color: #aaa; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #error {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #e53935; font-family: sans-serif; font-size: 13px;
+    text-align: center; padding: 16px; display: none;
+  }
+</style>
+</head>
+<body>
+<div id="canvas-container">
+  <div id="loading"><div class="spinner"></div>Loading Live2D...</div>
+  <div id="error"></div>
+</div>
+<script>
+var _pixiApp = null, _live2dModel = null, _currentModelUrl = null, _initInProgress = false;
+
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  var el = document.getElementById('error');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function loadScript(url, id) {
+  return new Promise(function(resolve, reject) {
+    if (document.getElementById(id)) { resolve(); return; }
+    var s = document.createElement('script');
+    s.id = id; s.src = url;
+    s.onload = resolve;
+    s.onerror = function() { reject(new Error('Failed to load: ' + url)); };
+    document.head.appendChild(s);
+  });
+}
+
+async function initLive2D(serverUrl, modelUrl, kScale, idleMotionGroup) {
+  if (_initInProgress) return;
+  _initInProgress = true;
+  try {
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('error').style.display = 'none';
+    var fullModelUrl = modelUrl.startsWith('http') ? modelUrl : serverUrl + modelUrl;
+
+    if (_currentModelUrl === fullModelUrl && _live2dModel) {
+      document.getElementById('loading').style.display = 'none';
+      _initInProgress = false; return;
+    }
+
+    // Cleanup
+    if (_live2dModel) { try { _live2dModel.parent.removeChild(_live2dModel); } catch(e) {} try { _live2dModel.destroy(); } catch(e) {} _live2dModel = null; }
+    if (_pixiApp) { try { _pixiApp.destroy(true); } catch(e) {} _pixiApp = null; }
+    var container = document.getElementById('canvas-container');
+    var canvases = container.querySelectorAll('canvas');
+    for (var i = 0; i < canvases.length; i++) canvases[i].remove();
+
+    // Load dependencies
+    if (!window.Live2DCubismCore) await loadScript(serverUrl + '/lib/live2d/live2dcubismcore.min.js', 'cubism-core');
+    if (!window.PIXI) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pixi.js/6.5.10/browser/pixi.min.js', 'pixi-js');
+      if (!window.PIXI) await loadScript('https://pixijs.download/v6.5.10/pixi.min.js', 'pixi-js-alt');
+    }
+    if (!window.PIXI) throw new Error('PIXI not available');
+    if (!window.PIXI.live2d) await loadScript('https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js', 'pixi-live2d');
+    if (!window.PIXI.live2d) throw new Error('pixi-live2d-display not loaded');
+
+    var Live2DModel = window.PIXI.live2d.Live2DModel;
+    Live2DModel.registerTicker(window.PIXI.Ticker);
+
+    var w = container.clientWidth || window.innerWidth;
+    var h = container.clientHeight || window.innerHeight;
+    var app = new window.PIXI.Application({
+      width: w, height: h, backgroundAlpha: 1, backgroundColor: 0x1a1a2e,
+      antialias: true, autoDensity: false, resolution: 1,
+    });
+    container.appendChild(app.view);
+    _pixiApp = app;
+
+    var model = await Live2DModel.from(fullModelUrl, { autoInteract: false });
+    _live2dModel = model; _currentModelUrl = fullModelUrl;
+
+    var scaleX = w / model.width, scaleY = h / model.height;
+    model.scale.set(Math.min(scaleX, scaleY) * 0.9);
+    model.anchor.set(0.5, 0.5);
+    model.x = w / 2; model.y = h / 2;
+    app.stage.addChild(model);
+
+    try { await model.motion(idleMotionGroup || 'Idle'); } catch(e) {}
+    document.getElementById('loading').style.display = 'none';
+    if (window.AndroidBridge) window.AndroidBridge.onModelLoaded();
+  } catch(err) {
+    console.error('[Live2D]', err.message);
+    showError(err.message || 'Failed to load');
+    if (window.AndroidBridge) window.AndroidBridge.onError(err.message || 'Unknown error');
+  } finally { _initInProgress = false; }
+}
+
+function applyAvatarState(expressionIndex, motionGroup, motionIndex, trigger) {
+  if (!_live2dModel) return;
+  try { _live2dModel.expression(expressionIndex); } catch(e) {}
+  if (trigger !== 'system') { try { _live2dModel.motion(motionGroup, motionIndex); } catch(e) {} }
+}
+
+function applyMotion(motionGroup, motionIndex) {
+  if (!_live2dModel) return;
+  try { _live2dModel.motion(motionGroup, motionIndex || 0); } catch(e) {}
+}
+
+document.getElementById('canvas-container').addEventListener('click', function(e) {
+  var rect = this.getBoundingClientRect();
+  var x = (e.clientX - rect.left) / rect.width, y = (e.clientY - rect.top) / rect.height;
+  if (window.AndroidBridge) window.AndroidBridge.onTap(y < 0.4 ? 'HitAreaHead' : 'HitAreaBody', x, y);
+});
+
+window.addEventListener('resize', function() {
+  if (!_pixiApp || !_live2dModel) return;
+  var c = document.getElementById('canvas-container');
+  var w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight;
+  _pixiApp.renderer.resize(w, h);
+  var m = _live2dModel, bw = m.width / m.scale.x, bh = m.height / m.scale.y;
+  m.scale.set(Math.min(w / bw, h / bh) * 0.9);
+  m.x = w / 2; m.y = h / 2;
+});
+</script>
+</body>
+</html>
