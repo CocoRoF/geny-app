@@ -19,7 +19,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,6 +70,10 @@ fun VTuberViewerScreen(
     val uiState by viewModel.uiState.collectAsState()
     var webView by remember { mutableStateOf<WebView?>(null) }
 
+    // Detect keyboard open state
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val isKeyboardOpen = imeVisible
+
     // Push avatar state to WebView when it changes
     LaunchedEffect(uiState.avatarState) {
         val state = uiState.avatarState ?: return@LaunchedEffect
@@ -104,7 +112,6 @@ fun VTuberViewerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .imePadding()
     ) {
         if (uiState.isLoading) {
             LoadingOverlay()
@@ -213,15 +220,17 @@ fun VTuberViewerScreen(
             )
         )
 
-        // Layer 3: Chat overlay + input (bottom)
+        // Layer 3: Chat overlay (above input, NOT affected by keyboard)
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 64.dp) // space for the input row
         ) {
             // Chat messages overlay (collapsible)
             AnimatedVisibility(
-                visible = uiState.chatOverlayVisible && uiState.messages.isNotEmpty(),
+                visible = uiState.chatOverlayVisible && uiState.messages.isNotEmpty() && !isKeyboardOpen,
                 enter = fadeIn() + slideInVertically { it },
                 exit = fadeOut() + slideOutVertically { it }
             ) {
@@ -233,7 +242,7 @@ fun VTuberViewerScreen(
 
             // Thinking indicator
             AnimatedVisibility(
-                visible = uiState.isThinking,
+                visible = uiState.isThinking && !isKeyboardOpen,
                 enter = fadeIn() + slideInVertically { it },
                 exit = fadeOut() + slideOutVertically { it }
             ) {
@@ -245,47 +254,50 @@ fun VTuberViewerScreen(
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
+        }
 
-            // Chat input
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.Bottom
-            ) {
-                OutlinedTextField(
-                    value = uiState.chatMessage,
-                    onValueChange = viewModel::onChatMessageChanged,
-                    placeholder = { Text("Send a message...") },
-                    modifier = Modifier.weight(1f),
-                    maxLines = 3,
-                    enabled = !uiState.isSending,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                        focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
-                    )
+        // Layer 4: Chat input (moves with keyboard)
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(8.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            OutlinedTextField(
+                value = uiState.chatMessage,
+                onValueChange = viewModel::onChatMessageChanged,
+                placeholder = { Text("Send a message...") },
+                modifier = Modifier.weight(1f),
+                maxLines = 3,
+                enabled = !uiState.isSending,
+                shape = RoundedCornerShape(24.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
                 )
+            )
 
-                IconButton(
-                    onClick = viewModel::sendChat,
-                    enabled = uiState.chatMessage.isNotBlank() && !uiState.isSending,
-                    modifier = Modifier
-                        .padding(start = 4.dp)
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(
-                                alpha = if (uiState.chatMessage.isNotBlank()) 1f else 0.4f
-                            )
+            IconButton(
+                onClick = viewModel::sendChat,
+                enabled = uiState.chatMessage.isNotBlank() && !uiState.isSending,
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(
+                            alpha = if (uiState.chatMessage.isNotBlank()) 1f else 0.4f
                         )
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        "Send",
-                        tint = MaterialTheme.colorScheme.onPrimary
                     )
-                }
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    "Send",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
             }
         }
     }

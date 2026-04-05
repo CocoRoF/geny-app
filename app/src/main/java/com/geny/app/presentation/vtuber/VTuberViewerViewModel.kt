@@ -364,10 +364,9 @@ class VTuberViewerViewModel @Inject constructor(
     private fun startPollingFallback(roomId: String) {
         pollingJob?.cancel()
         pollingJob = viewModelScope.launch {
-            // Initial delay — give SSE a chance first
-            delay(3000)
-
-            repeat(20) { i ->
+            // Poll aggressively: first 10 attempts at 1s, then 20 more at 2s
+            val attempts = 30
+            for (i in 0 until attempts) {
                 if (!_uiState.value.isThinking) return@launch // SSE delivered it
 
                 Log.d(TAG, "Polling for messages (attempt ${i + 1})...")
@@ -421,7 +420,7 @@ class VTuberViewerViewModel @Inject constructor(
                     }
                 }
 
-                delay(3000)
+                delay(if (i < 10) 1000L else 2000L)
             }
         }
     }
