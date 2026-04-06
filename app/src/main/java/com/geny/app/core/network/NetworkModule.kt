@@ -3,20 +3,25 @@ package com.geny.app.core.network
 import com.geny.app.data.api.AgentApi
 import com.geny.app.data.api.AuthApi
 import com.geny.app.data.api.ChatApi
+import com.geny.app.data.api.CuratedKnowledgeApi
 import com.geny.app.data.api.GlobalMemoryApi
 import com.geny.app.data.api.HealthApi
 import com.geny.app.data.api.MemoryApi
 import com.geny.app.data.api.TtsApi
 import com.geny.app.data.api.UserOpsidianApi
 import com.geny.app.data.api.VTuberApi
+import android.content.Context
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import okhttp3.Cache
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
@@ -28,10 +33,14 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
+        @ApplicationContext context: Context,
         authInterceptor: AuthInterceptor,
         serverUrlInterceptor: ServerUrlInterceptor
     ): OkHttpClient {
+        val cacheDir = File(context.cacheDir, "http_cache")
+        val cacheSize = 50L * 1024 * 1024 // 50 MB
         return OkHttpClient.Builder()
+            .cache(Cache(cacheDir, cacheSize))
             .addInterceptor(serverUrlInterceptor)
             .addInterceptor(authInterceptor)
             .addInterceptor(HttpLoggingInterceptor().apply {
@@ -126,4 +135,8 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideUserOpsidianApi(retrofit: Retrofit): UserOpsidianApi = retrofit.create(UserOpsidianApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideCuratedKnowledgeApi(retrofit: Retrofit): CuratedKnowledgeApi = retrofit.create(CuratedKnowledgeApi::class.java)
 }

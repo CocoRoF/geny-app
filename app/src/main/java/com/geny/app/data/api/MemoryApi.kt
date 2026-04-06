@@ -142,3 +142,43 @@ interface UserOpsidianApi {
     @POST("api/opsidian/reindex")
     suspend fun reindex(): Map<String, Any>
 }
+
+// Curated Knowledge API — quality-refined knowledge vault
+interface CuratedKnowledgeApi {
+    @GET("api/curated")
+    suspend fun getIndex(): MemoryIndexResponse
+
+    @GET("api/curated/graph")
+    suspend fun getGraph(): MemoryGraphResponse
+
+    @GET("api/curated/tags")
+    suspend fun getTags(): MemoryTagsResponse
+
+    @GET("api/curated/search")
+    suspend fun search(
+        @Query("q") query: String,
+        @Query("max_results") maxResults: Int? = 10
+    ): MemorySearchResponse
+
+    @GET("api/curated/files/{filename}")
+    suspend fun getFile(
+        @Path("filename", encoded = true) filename: String
+    ): MemoryFileResponse
+
+    @POST("api/curated/files")
+    suspend fun createFile(@Body request: WriteNoteRequest): Map<String, String>
+
+    @PUT("api/curated/files/{filename}")
+    suspend fun updateFile(
+        @Path("filename", encoded = true) filename: String,
+        @Body request: UpdateNoteRequest
+    ): Map<String, String>
+
+    @DELETE("api/curated/files/{filename}")
+    suspend fun deleteFile(
+        @Path("filename", encoded = true) filename: String
+    ): Map<String, String>
+
+    @POST("api/curated/reindex")
+    suspend fun reindex(): Map<String, Any>
+}

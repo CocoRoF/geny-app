@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -302,10 +303,10 @@ private fun OpsidianTopBar(
                         modifier = Modifier.height(28.dp)
                     )
                     FilterChip(
-                        selected = vaultMode == VaultMode.GLOBAL,
-                        onClick = { onVaultSwitch(VaultMode.GLOBAL) },
-                        label = { Text("Global", style = MaterialTheme.typography.labelSmall) },
-                        leadingIcon = { Icon(Icons.Filled.Public, null, modifier = Modifier.size(14.dp)) },
+                        selected = vaultMode == VaultMode.CURATED,
+                        onClick = { onVaultSwitch(VaultMode.CURATED) },
+                        label = { Text("Curated", style = MaterialTheme.typography.labelSmall) },
+                        leadingIcon = { Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(14.dp)) },
                         modifier = Modifier.height(28.dp)
                     )
                 }
@@ -1281,11 +1282,28 @@ private fun SessionSelectorSheet(
                                         )
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = agent.sessionName,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = agent.sessionName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Text(
+                                            text = agent.role.name.lowercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier
+                                                .background(
+                                                    MaterialTheme.colorScheme.secondaryContainer,
+                                                    RoundedCornerShape(4.dp)
+                                                )
+                                                .padding(horizontal = 6.dp, vertical = 1.dp)
+                                        )
+                                    }
                                     Text(
                                         text = agent.sessionId.take(12),
                                         style = MaterialTheme.typography.labelSmall,
@@ -1505,7 +1523,9 @@ private fun categoryColor(category: String?): Color {
         "entities" -> Color(0xFF10B981)
         "projects" -> Color(0xFF8B5CF6)
         "insights" -> Color(0xFFEC4899)
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        "decisions" -> Color(0xFFEF4444)
+        "reference" -> Color(0xFF6366F1)
+        else -> Color(0xFF94A3B8)
     }
 }
 

@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class VaultMode { USER, SESSION, GLOBAL }
+enum class VaultMode { USER, CURATED, SESSION }
 enum class ViewMode { FILES, NOTE, GRAPH, SEARCH }
 
 data class OpsidianUiState(
@@ -67,7 +67,7 @@ data class OpsidianUiState(
 
     // Filter
     val fileFilter: String = "",
-    val expandedCategories: Set<String> = setOf("daily", "topics", "entities", "projects", "insights", "root")
+    val expandedCategories: Set<String> = setOf("daily", "topics", "entities", "projects", "insights", "decisions", "reference", "root")
 )
 
 @HiltViewModel
@@ -135,8 +135,10 @@ class OpsidianViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoadingSessions = true)
             agentRepository.listAgents()
                 .onSuccess { agents ->
+                    // Filter out CLI sessions bound to a VTuber (they share memory)
+                    val visible = agents.filter { !it.isLinkedCli && !it.isDeleted }
                     _uiState.value = _uiState.value.copy(
-                        sessions = agents,
+                        sessions = visible,
                         isLoadingSessions = false
                     )
                 }
@@ -154,7 +156,7 @@ class OpsidianViewModel @Inject constructor(
             // Load files
             val filesResult = when (state.vaultMode) {
                 VaultMode.USER -> memoryRepository.getUserFiles()
-                VaultMode.GLOBAL -> memoryRepository.getGlobalFiles()
+                VaultMode.CURATED -> memoryRepository.getCuratedFiles()
                 VaultMode.SESSION -> {
                     val sid = state.selectedSessionId ?: return@launch
                     memoryRepository.getMemoryFiles(sid)
@@ -174,7 +176,7 @@ class OpsidianViewModel @Inject constructor(
             // Load stats
             val statsResult = when (state.vaultMode) {
                 VaultMode.USER -> memoryRepository.getUserStats()
-                VaultMode.GLOBAL -> memoryRepository.getGlobalStats()
+                VaultMode.CURATED -> memoryRepository.getCuratedStats()
                 VaultMode.SESSION -> {
                     val sid = state.selectedSessionId ?: return@launch
                     memoryRepository.getMemoryStats(sid)
@@ -195,7 +197,9 @@ class OpsidianViewModel @Inject constructor(
                         _uiState.value = _uiState.value.copy(tags = tags)
                     }
                 }
-                VaultMode.GLOBAL -> {}
+                VaultMode.CURATED -> memoryRepository.getCuratedTags().onSuccess { tags ->
+                    _uiState.value = _uiState.value.copy(tags = tags)
+                }
             }
         }
     }
@@ -226,7 +230,7 @@ class OpsidianViewModel @Inject constructor(
                         ?: return@launch
                     memoryRepository.getGraph(sid)
                 }
-                VaultMode.GLOBAL -> Result.success(MemoryGraph(emptyList(), emptyList()))
+                VaultMode.CURATED -> memoryRepository.getCuratedGraph()
             }
             result
                 .onSuccess { graph ->
@@ -248,7 +252,7 @@ class OpsidianViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoadingFile = true, viewMode = ViewMode.NOTE)
             val result = when (state.vaultMode) {
                 VaultMode.USER -> memoryRepository.getUserFile(filename)
-                VaultMode.GLOBAL -> memoryRepository.getGlobalFile(filename)
+                VaultMode.CURATED -> memoryRepository.getCuratedFile(filename)
                 VaultMode.SESSION -> {
                     val sid = state.selectedSessionId ?: return@launch
                     memoryRepository.getFile(sid, filename)
@@ -320,7 +324,7 @@ class OpsidianViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isSearching = true)
             val result = when (state.vaultMode) {
                 VaultMode.USER -> memoryRepository.searchUser(query)
-                VaultMode.GLOBAL -> memoryRepository.searchGlobal(query)
+                VaultMode.CURATED -> memoryRepository.searchCurated(query)
                 VaultMode.SESSION -> {
                     val sid = state.selectedSessionId ?: return@launch
                     memoryRepository.search(sid, query)
@@ -395,7 +399,7 @@ class OpsidianViewModel @Inject constructor(
                         title = state.editTitle, content = state.editContent,
                         category = state.editCategory, tags = tags, importance = state.editImportance
                     )
-                    VaultMode.GLOBAL -> memoryRepository.createGlobalNote(
+                    VaultMode.CURATED -> memoryRepository.createCuratedNote(
                         title = state.editTitle, content = state.editContent,
                         category = state.editCategory, tags = tags, importance = state.editImportance
                     )
@@ -426,7 +430,7 @@ class OpsidianViewModel @Inject constructor(
                         filename = filename, content = state.editContent,
                         tags = tags, importance = state.editImportance
                     )
-                    VaultMode.GLOBAL -> memoryRepository.updateGlobalNote(
+                    VaultMode.CURATED -> memoryRepository.updateCuratedNote(
                         filename = filename, content = state.editContent,
                         tags = tags, importance = state.editImportance
                     )
@@ -458,7 +462,7 @@ class OpsidianViewModel @Inject constructor(
         viewModelScope.launch {
             val result = when (state.vaultMode) {
                 VaultMode.USER -> memoryRepository.deleteUserNote(filename)
-                VaultMode.GLOBAL -> memoryRepository.deleteGlobalNote(filename)
+                VaultMode.CURATED -> memoryRepository.deleteCuratedNote(filename)
                 VaultMode.SESSION -> {
                     val sid = state.selectedSessionId ?: return@launch
                     memoryRepository.deleteNote(sid, filename)

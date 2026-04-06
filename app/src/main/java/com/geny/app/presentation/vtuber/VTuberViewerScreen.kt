@@ -141,6 +141,9 @@ fun VTuberViewerScreen(
                     settings.allowUniversalAccessFromFileURLs = true
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    // Enable aggressive caching for Live2D model files
+                    settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                    settings.databaseEnabled = true
                     setBackgroundColor(android.graphics.Color.parseColor("#1a1a2e"))
                     webChromeClient = object : WebChromeClient() {
                         override fun onConsoleMessage(cm: ConsoleMessage?): Boolean {
@@ -156,6 +159,18 @@ fun VTuberViewerScreen(
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             viewModel.onWebViewReady()
+                        }
+
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: android.webkit.WebResourceRequest?
+                        ): android.webkit.WebResourceResponse? {
+                            val url = request?.url?.toString() ?: return null
+                            // Intercept Live2D model file requests for local caching
+                            if (url.contains("/api/vtuber/models/") || url.contains("/lib/live2d/")) {
+                                return ModelCacheHelper.getOrFetch(context, url)
+                            }
+                            return null
                         }
                     }
                     addJavascriptInterface(

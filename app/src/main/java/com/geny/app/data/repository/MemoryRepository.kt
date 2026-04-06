@@ -1,5 +1,6 @@
 package com.geny.app.data.repository
 
+import com.geny.app.data.api.CuratedKnowledgeApi
 import com.geny.app.data.api.GlobalMemoryApi
 import com.geny.app.data.api.MemoryApi
 import com.geny.app.data.api.UserOpsidianApi
@@ -19,7 +20,8 @@ import javax.inject.Singleton
 class MemoryRepository @Inject constructor(
     private val memoryApi: MemoryApi,
     private val globalMemoryApi: GlobalMemoryApi,
-    private val userOpsidianApi: UserOpsidianApi
+    private val userOpsidianApi: UserOpsidianApi,
+    private val curatedKnowledgeApi: CuratedKnowledgeApi
 ) {
     // ========================================================================
     // Session Memory
@@ -340,6 +342,116 @@ class MemoryRepository @Inject constructor(
 
     suspend fun deleteUserNote(filename: String): Result<Unit> = runCatching {
         userOpsidianApi.deleteFile(filename)
+    }
+
+    // ========================================================================
+    // Curated Knowledge
+    // ========================================================================
+
+    suspend fun getCuratedFiles(): Result<List<MemoryFile>> = runCatching {
+        val response = curatedKnowledgeApi.getIndex()
+        response.index?.files?.values?.map { it.toDomain() } ?: emptyList()
+    }
+
+    suspend fun getCuratedStats(): Result<MemoryStats> = runCatching {
+        val response = curatedKnowledgeApi.getIndex()
+        val stats = response.stats
+        MemoryStats(
+            totalFiles = stats?.totalFiles ?: 0,
+            longTermEntries = stats?.longTermEntries ?: 0,
+            shortTermEntries = stats?.shortTermEntries ?: 0,
+            lastWrite = stats?.lastWrite,
+            categories = stats?.categories ?: emptyMap(),
+            totalTags = stats?.totalTags ?: 0,
+            totalChars = stats?.totalChars ?: 0,
+            totalLinks = stats?.totalLinks ?: 0
+        )
+    }
+
+    suspend fun getCuratedTags(): Result<Map<String, Int>> = runCatching {
+        curatedKnowledgeApi.getTags().tags
+    }
+
+    suspend fun getCuratedGraph(): Result<MemoryGraph> = runCatching {
+        val response = curatedKnowledgeApi.getGraph()
+        MemoryGraph(
+            nodes = response.nodes?.map { dto ->
+                MemoryGraphNode(
+                    id = dto.id,
+                    label = dto.label,
+                    category = dto.category,
+                    importance = dto.importance,
+                    linkCount = dto.linkCount ?: 0
+                )
+            } ?: emptyList(),
+            edges = response.edges?.map { dto ->
+                MemoryGraphEdge(source = dto.source, target = dto.target)
+            } ?: emptyList()
+        )
+    }
+
+    suspend fun searchCurated(query: String): Result<List<MemorySearchResult>> = runCatching {
+        curatedKnowledgeApi.search(query).results.map { dto ->
+            MemorySearchResult(
+                filename = dto.entry?.filename,
+                title = dto.entry?.title,
+                snippet = dto.snippet,
+                score = dto.score,
+                category = dto.entry?.category,
+                content = dto.entry?.content,
+                matchType = dto.matchType,
+                importance = dto.entry?.importance,
+                tags = dto.entry?.tags ?: emptyList()
+            )
+        }
+    }
+
+    suspend fun getCuratedFile(filename: String): Result<MemoryFileDetail> = runCatching {
+        val response = curatedKnowledgeApi.getFile(filename)
+        MemoryFileDetail(
+            filename = response.filename,
+            title = response.title,
+            body = response.body,
+            raw = response.raw,
+            linksTo = response.linksTo ?: emptyList(),
+            linkedFrom = response.linkedFrom ?: emptyList(),
+            metadata = response.metadata ?: emptyMap()
+        )
+    }
+
+    suspend fun createCuratedNote(
+        title: String,
+        content: String,
+        category: String = "topics",
+        tags: List<String> = emptyList(),
+        importance: String = "medium"
+    ): Result<String> = runCatching {
+        val response = curatedKnowledgeApi.createFile(
+            WriteNoteRequest(
+                title = title,
+                content = content,
+                category = category,
+                tags = tags,
+                importance = importance
+            )
+        )
+        response["filename"] ?: ""
+    }
+
+    suspend fun updateCuratedNote(
+        filename: String,
+        content: String? = null,
+        tags: List<String>? = null,
+        importance: String? = null
+    ): Result<Unit> = runCatching {
+        curatedKnowledgeApi.updateFile(
+            filename,
+            UpdateNoteRequest(content = content, tags = tags, importance = importance)
+        )
+    }
+
+    suspend fun deleteCuratedNote(filename: String): Result<Unit> = runCatching {
+        curatedKnowledgeApi.deleteFile(filename)
     }
 
     // ========================================================================
